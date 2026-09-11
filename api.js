@@ -20,7 +20,7 @@ export function setSetting(key, value) {
 export class MissingKeyError extends Error {}
 
 function enlarge(url) {
-  return url ? url.replace(/_ex=\d+x\d+/, '_ex=400x400') : '';
+  return url ? url.replace(/_ex=\d+x\d+/, '_ex=600x600') : '';
 }
 
 function splitAuthors(author) {

@@ -667,6 +667,115 @@ html[data-theme="dark"] .search__go,
   color: var(--text-3);
 }
 
+/* --- Library picker --- */
+
+.lib {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s2);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+  transition: background var(--duration) ease;
+}
+
+.lib[aria-pressed="true"] {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.lib__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lib__name {
+  margin: 0;
+  font-size: var(--t2);
+  font-weight: 500;
+}
+
+.lib__branches {
+  margin: 2px 0 0;
+  font-size: var(--t1);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lib[aria-pressed="true"] .lib__branches {
+  color: inherit;
+  opacity: .75;
+}
+
+.lib__mark {
+  flex: 0 0 auto;
+  color: var(--outline);
+}
+
+.lib[aria-pressed="true"] .lib__mark {
+  color: currentColor;
+}
+
+/* --- Availability --- */
+
+.avail {
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--divider);
+}
+
+.avail__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.avail__name {
+  flex: 1;
+  margin: 0;
+  font-size: var(--t2);
+  font-weight: 500;
+}
+
+.avail__branches {
+  margin: var(--s1) 0 0;
+  font-size: var(--t1);
+  line-height: 1.7;
+  color: var(--text-2);
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 2px var(--s3);
+  border-radius: 10px;
+  font-size: var(--t1);
+  font-weight: 500;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.badge--ok {
+  background: #E6F4EA;
+  color: #137333;
+}
+
+.badge--busy {
+  background: #FEF7E0;
+  color: #B06000;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .badge--ok { background: #1F3D2A; color: #81C995; }
+  html:not([data-theme="light"]) .badge--busy { background: #453620; color: #FDD663; }
+}
+
+html[data-theme="dark"] .badge--ok { background: #1F3D2A; color: #81C995; }
+html[data-theme="dark"] .badge--busy { background: #453620; color: #FDD663; }
+
 /* --- Rating --- */
 
 .rating {

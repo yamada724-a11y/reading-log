@@ -1,5 +1,15 @@
 import { listBooks, getBook, saveBook, deleteBook, createBook, importBooks } from './db.js';
-import { KEYS, getSetting, setSetting, searchBooks, MissingKeyError } from './api.js';
+import {
+  KEYS,
+  getSetting,
+  setSetting,
+  searchBooks,
+  fetchLibraries,
+  getLibraries,
+  setLibraries,
+  checkAvailability,
+  MissingKeyError,
+} from './api.js';
 
 const app = document.getElementById('app');
 
@@ -524,6 +534,7 @@ async function viewDetail(id) {
         dateInput,
         h('p', { class: 'field__note', text: '感想を書くと、その日の日付が自動で入ります。' }),
       ]),
+      libraryCard(book),
       h('button', {
         class: 'btn btn--quiet',
         text: 'この本を削除',
@@ -536,6 +547,63 @@ async function viewDetail(id) {
       }),
     ]),
   ];
+}
+
+function libraryCard(book) {
+  const systems = getLibraries();
+  const label = h('p', { class: 'card__label', text: '図書館' });
+
+  if (!book.isbn13) {
+    return h('div', { class: 'card' }, [
+      label,
+      h('p', { class: 'field__note', text: 'この本にはISBNが登録されていないため、蔵書を調べられません。検索から登録し直すと調べられるようになります。' }),
+    ]);
+  }
+
+  if (!systems.length) {
+    return h('div', { class: 'card' }, [
+      label,
+      h('p', { class: 'field__note' }, [
+        '調べたい図書館がまだ選ばれていません。　',
+        h('button', { class: 'link', text: '設定で選ぶ', onClick: () => go('/settings') }),
+      ]),
+    ]);
+  }
+
+  const status = h('p', { class: 'field__note' });
+  const results = h('div', {});
+
+  const draw = (books) => {
+    results.replaceChildren(...systems.map((system) => availabilityNode(system, books[system.systemid] || {})));
+  };
+
+  const button = h('button', {
+    class: 'tonal',
+    style: { width: '100%', justifyContent: 'center' },
+    text: '蔵書を調べる',
+    onClick: async () => {
+      button.disabled = true;
+      status.textContent = '図書館に問い合わせています…（十数秒かかることがあります）';
+      try {
+        const found = await checkAvailability(book.isbn13, systems.map((s) => s.systemid), { onProgress: draw });
+        draw(found);
+        status.textContent = '';
+      } catch (error) {
+        if (error instanceof MissingKeyError) {
+          status.replaceChildren(
+            'カーリルのアプリケーションキーが未設定です。',
+            h('button', { class: 'link', text: '設定を開く', onClick: () => go('/settings') })
+          );
+        } else if (error.name !== 'AbortError') {
+          status.textContent = error.message;
+        }
+      } finally {
+        button.disabled = false;
+      }
+    },
+  });
+
+  return h('div', { class: 'card' }, [label, button, status, results]);
 }
 
 /* ---------- Settings ---------- */
@@ -565,6 +633,15 @@ function viewSettings() {
     },
   });
 
+  const calilInput = h('input', {
+    type: 'text',
+    value: getSetting(KEYS.calilAppKey),
+    autocomplete: 'off',
+    placeholder: 'カーリルのアプリケーションキー',
+  });
+
+  const chosenLibraries = getLibraries();
+
   const themes = { '': '自動', light: '明るい', dark: '暗い' };
   const themePills = h('div', { class: 'pills' },
     Object.entries(themes).map(([key, label]) =>
@@ -593,6 +670,7 @@ function viewSettings() {
         onClick: () => {
           setSetting(KEYS.rakutenAppId, appIdInput.value.trim());
           setSetting(KEYS.rakutenAccessKey, accessKeyInput.value.trim());
+          setSetting(KEYS.calilAppKey, calilInput.value.trim());
           toast('保存しました');
           go('/');
         },
@@ -610,6 +688,22 @@ function viewSettings() {
           ]),
         ]),
       ]),
+      h('div', { class: 'card' }, [
+        h('p', { class: 'card__label', text: '図書館（カーリル）' }),
+        h('div', { class: 'field' }, calilInput),
+        h('button', {
+          class: 'tonal',
+          style: { width: '100%', justifyContent: 'center' },
+          text: chosenLibraries.length ? `図書館を選び直す（${chosenLibraries.length}件）` : '図書館を選ぶ',
+          onClick: () => {
+            setSetting(KEYS.calilAppKey, calilInput.value.trim());
+            go('/libraries');
+          },
+        }),
+        chosenLibraries.length
+          ? h('p', { class: 'field__note', text: chosenLibraries.map((item) => item.name).join('、') })
+          : h('p', { class: 'field__note', text: '読みたい本が置いてあるか調べたい図書館を選びます。' }),
+      ]),
       backupCard(),
       h('div', { class: 'card' }, [
         h('p', { class: 'card__label', text: '画面の明るさ' }),
@@ -617,6 +711,151 @@ function viewSettings() {
       ]),
     ]),
   ];
+}
+
+/* ---------- Libraries ---------- */
+
+const PREFECTURES = [
+  '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
+  '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+  '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県',
+  '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県',
+  '奈良県', '和歌山県', '鳥取県', '島根県', '岡山県', '広島県', '山口県',
+  '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県',
+  '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県',
+];
+
+function viewLibraries() {
+  let libraries = [];
+  let chosen = getLibraries();
+
+  const status = h('p', { class: 'field__note' });
+  const list = h('div', {});
+
+  const citySelect = h('select', {
+    disabled: true,
+    onChange: () => renderList(),
+  }, h('option', { value: '', text: 'すべての市区町村' }));
+
+  const prefSelect = h('select', { onChange: () => loadPref(prefSelect.value) }, [
+    h('option', { value: '', text: '都道府県を選ぶ' }),
+    ...PREFECTURES.map((name) => h('option', { value: name, text: name })),
+  ]);
+
+  function renderList() {
+    const city = citySelect.value;
+    const shown = city ? libraries.filter((lib) => lib.city === city) : libraries;
+
+    const systems = new Map();
+    for (const lib of shown) {
+      if (!systems.has(lib.systemid)) {
+        systems.set(lib.systemid, { systemid: lib.systemid, name: lib.systemname, branches: [] });
+      }
+      systems.get(lib.systemid).branches.push(lib.short || lib.formal);
+    }
+
+    status.textContent = `${systems.size}件の図書館システムが見つかりました。`;
+    list.replaceChildren(...[...systems.values()].map((system) => {
+      const selected = chosen.some((item) => item.systemid === system.systemid);
+      return h('button', {
+        class: 'lib',
+        'aria-pressed': String(selected),
+        onClick: (e) => {
+          const on = e.currentTarget.getAttribute('aria-pressed') === 'true';
+          chosen = on
+            ? chosen.filter((item) => item.systemid !== system.systemid)
+            : [...chosen, { systemid: system.systemid, name: system.name }];
+          setLibraries(chosen);
+          e.currentTarget.setAttribute('aria-pressed', String(!on));
+        },
+      }, [
+        h('div', { class: 'lib__body' }, [
+          h('p', { class: 'lib__name', text: system.name }),
+          h('p', { class: 'lib__branches', text: system.branches.slice(0, 6).join('、') }),
+        ]),
+        h('div', { class: 'lib__mark' }, icon('checkFill', 22)),
+      ]);
+    }));
+  }
+
+  async function loadPref(pref) {
+    list.replaceChildren();
+    citySelect.disabled = true;
+    if (!pref) {
+      status.textContent = '';
+      return;
+    }
+    status.textContent = '読み込んでいます…';
+    try {
+      libraries = await fetchLibraries(pref);
+      const cities = [...new Set(libraries.map((lib) => lib.city).filter(Boolean))].sort();
+      citySelect.replaceChildren(
+        h('option', { value: '', text: 'すべての市区町村' }),
+        ...cities.map((city) => h('option', { value: city, text: city }))
+      );
+      citySelect.disabled = false;
+      renderList();
+    } catch (error) {
+      if (error instanceof MissingKeyError) {
+        status.replaceChildren(
+          'カーリルのアプリケーションキーが未設定です。',
+          h('button', { class: 'link', text: '設定を開く', onClick: () => go('/settings') })
+        );
+        return;
+      }
+      status.textContent = error.message;
+    }
+  }
+
+  return [
+    bar({ title: '図書館を選ぶ', left: backButton(() => go('/settings')) }),
+    h('main', {}, [
+      h('div', { class: 'card' }, [
+        h('div', { class: 'field' }, prefSelect),
+        h('div', { class: 'field', style: { marginBottom: '0' } }, citySelect),
+      ]),
+      status,
+      list,
+    ]),
+  ];
+}
+
+const SHELF_STATUS = {
+  貸出可: 'ok',
+  蔵書あり: 'ok',
+  館内のみ: 'ok',
+  貸出中: 'busy',
+  予約中: 'busy',
+  準備中: 'busy',
+  休館中: 'busy',
+};
+
+function availabilityNode(system, result) {
+  const branches = Object.entries(result.libkey || {});
+  const values = branches.map(([, value]) => value);
+
+  let badge = { text: '蔵書なし', tone: 'none' };
+  if (values.some((value) => SHELF_STATUS[value] === 'ok')) badge = { text: '借りられます', tone: 'ok' };
+  else if (values.length) badge = { text: '貸出中', tone: 'busy' };
+  if (result.status === 'Running') badge = { text: '確認中…', tone: 'none' };
+
+  return h('div', { class: 'avail' }, [
+    h('div', { class: 'avail__head' }, [
+      h('p', { class: 'avail__name', text: system.name }),
+      h('span', { class: `badge badge--${badge.tone}`, text: badge.text }),
+    ]),
+    branches.length && h('p', {
+      class: 'avail__branches',
+      text: branches.map(([name, value]) => `${name}：${value}`).join(' / '),
+    }),
+    result.reserveurl && h('a', {
+      class: 'link',
+      href: result.reserveurl,
+      target: '_blank',
+      rel: 'noopener',
+      text: '図書館のページを開く',
+    }),
+  ]);
 }
 
 /* ---------- Backup ---------- */
@@ -712,6 +951,7 @@ async function render() {
   else if (section === 'manual') nodes = await viewForm(null);
   else if (section === 'new') nodes = viewSearch();
   else if (section === 'settings') nodes = viewSettings();
+  else if (section === 'libraries') nodes = viewLibraries();
   else nodes = await viewShelf();
 
   app.replaceChildren(...[].concat(nodes));

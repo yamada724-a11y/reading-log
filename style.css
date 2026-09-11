@@ -485,6 +485,10 @@ html[data-theme="dark"] .ph-3 { background: #1F3D2A; color: #81C995; }
   color: var(--text-3);
 }
 
+.warn {
+  color: var(--danger);
+}
+
 .link {
   color: var(--primary);
   font-size: inherit;

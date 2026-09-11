@@ -46,7 +46,6 @@ export function createBook(fields = {}) {
     isbn13: '',
     isbn10: '',
     coverUrl: '',
-    coverBlob: null,
     note: '',
     rating: 0,
     startedAt: '',
@@ -75,4 +74,39 @@ export async function saveBook(book) {
 
 export function deleteBook(id) {
   return run('readwrite', (store) => store.delete(id));
+}
+
+export async function importBooks(records) {
+  const existing = new Map((await listBooks()).map((book) => [book.id, book]));
+  const counts = { added: 0, updated: 0, skipped: 0 };
+
+  const clean = records
+    .filter((record) => record && typeof record.id === 'string' && typeof record.title === 'string')
+    .map((record) => ({
+      ...createBook(),
+      ...record,
+      authors: Array.isArray(record.authors) ? record.authors : [],
+    }));
+
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    for (const record of clean) {
+      const current = existing.get(record.id);
+      if (!current) {
+        store.put(record);
+        counts.added += 1;
+      } else if ((record.updatedAt || '') > (current.updatedAt || '')) {
+        store.put(record);
+        counts.updated += 1;
+      } else {
+        counts.skipped += 1;
+      }
+    }
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  return counts;
 }

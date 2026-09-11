@@ -6,6 +6,7 @@ export const KEYS = {
   rakutenAccessKey: 'rl.rakutenAccessKey',
   calilAppKey: 'rl.calilAppKey',
   theme: 'rl.theme',
+  lastBackupAt: 'rl.lastBackupAt',
 };
 
 export function getSetting(key) {

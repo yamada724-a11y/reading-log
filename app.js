@@ -1,4 +1,4 @@
-import { listBooks, getBook, saveBook, deleteBook, createBook } from './db.js';
+import { listBooks, getBook, saveBook, deleteBook, createBook, importBooks } from './db.js';
 import { KEYS, getSetting, setSetting, searchBooks, MissingKeyError } from './api.js';
 
 const app = document.getElementById('app');
@@ -104,9 +104,6 @@ function paletteOf(text) {
 }
 
 function coverNode(book) {
-  if (book.coverBlob) {
-    return h('img', { src: URL.createObjectURL(book.coverBlob), alt: '' });
-  }
   if (book.coverUrl) {
     return h('img', { src: book.coverUrl, alt: '', loading: 'lazy' });
   }
@@ -613,12 +610,83 @@ function viewSettings() {
           ]),
         ]),
       ]),
+      backupCard(),
       h('div', { class: 'card' }, [
         h('p', { class: 'card__label', text: '画面の明るさ' }),
         themePills,
       ]),
     ]),
   ];
+}
+
+/* ---------- Backup ---------- */
+
+const DAY = 24 * 60 * 60 * 1000;
+
+function backupCard() {
+  const lastBackupAt = getSetting(KEYS.lastBackupAt);
+  const stale = !lastBackupAt || Date.now() - Date.parse(lastBackupAt) > 30 * DAY;
+
+  const state = h('p', {
+    class: 'field__note',
+    text: lastBackupAt
+      ? `最後に書き出したのは ${lastBackupAt.slice(0, 10)} です。`
+      : 'まだ一度も書き出していません。',
+  });
+
+  const fileInput = h('input', {
+    type: 'file',
+    accept: 'application/json,.json',
+    hidden: true,
+    onChange: async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const payload = JSON.parse(await file.text());
+        if (payload?.schema !== 'readinglog.v1' || !Array.isArray(payload.books)) {
+          throw new Error('このアプリのバックアップではないようです。');
+        }
+        const { added, updated, skipped } = await importBooks(payload.books);
+        toast(`${added}冊を追加、${updated}冊を更新しました`);
+        state.textContent = `読み戻しました（追加${added} / 更新${updated} / 変更なし${skipped}）`;
+      } catch (error) {
+        state.textContent = `読み戻せませんでした：${error.message}`;
+      } finally {
+        e.target.value = '';
+      }
+    },
+  });
+
+  const exportNow = async () => {
+    const books = await listBooks();
+    const payload = {
+      schema: 'readinglog.v1',
+      exportedAt: new Date().toISOString(),
+      books,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' }));
+    const link = h('a', { href: url, download: `読書記録-${todayISO()}.json` });
+    link.click();
+    URL.revokeObjectURL(url);
+    setSetting(KEYS.lastBackupAt, new Date().toISOString());
+    state.textContent = `${books.length}冊を書き出しました。`;
+    toast('書き出しました');
+  };
+
+  return h('div', { class: 'card' }, [
+    h('p', { class: 'card__label', text: 'バックアップ' }),
+    h('button', { class: 'btn', text: 'ファイルに書き出す', onClick: exportNow }),
+    h('button', {
+      class: 'tonal',
+      style: { width: '100%', justifyContent: 'center', marginTop: 'var(--s3)' },
+      text: 'ファイルから読み戻す',
+      onClick: () => fileInput.click(),
+    }),
+    fileInput,
+    state,
+    stale && h('p', { class: 'field__note warn', text: '記録はこの端末の中にしかありません。機種変更やブラウザのデータ削除で消えるため、ときどき書き出してください。' }),
+    h('p', { class: 'field__note', text: 'APIキーはバックアップに含まれません。' }),
+  ]);
 }
 
 function viewMissing() {

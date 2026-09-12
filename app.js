@@ -972,13 +972,19 @@ function backupCard() {
 
   const fileInput = h('input', {
     type: 'file',
-    accept: 'application/json,.json,text/plain,.txt',
     hidden: true,
     onChange: async (e) => {
       const file = e.target.files[0];
       if (!file) return;
       try {
-        const payload = JSON.parse(await file.text());
+        /* スマホでは種類で絞り込めない（iOS Safari は accept 指定でJSONを選べなくなる）ため、
+           どのファイルも選べるようにして、中身で判定する。 */
+        let payload = null;
+        try {
+          payload = JSON.parse(await file.text());
+        } catch {
+          // JSONとして読めないファイル（ZIPなど）も下の判定で弾く
+        }
         if (payload?.schema !== 'readinglog.v1' || !Array.isArray(payload.books)) {
           throw new Error('このアプリのバックアップではないようです。');
         }

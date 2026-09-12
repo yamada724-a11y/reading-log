@@ -585,6 +585,20 @@ async function viewDetail(id) {
   ];
 }
 
+/* カーリルの規約上、蔵書情報を表示するときはカーリルの本のページへリンクする。
+   仕様書の書式は ISBN10 のため、978 で始まる ISBN13 は ISBN10 に直す。 */
+function calilBookUrl(book) {
+  const isbn13 = book.isbn13 || '';
+  let isbn10 = book.isbn10 || '';
+  if (!isbn10 && isbn13.startsWith('978')) {
+    const core = isbn13.slice(3, 12);
+    const sum = [...core].reduce((total, digit, i) => total + Number(digit) * (10 - i), 0);
+    const check = (11 - (sum % 11)) % 11;
+    isbn10 = core + (check === 10 ? 'X' : String(check));
+  }
+  return `https://calil.jp/book/${isbn10 || isbn13}`;
+}
+
 function libraryCard(book) {
   const systems = getLibraries();
   const label = h('p', { class: 'card__label', text: '図書館' });
@@ -610,7 +624,13 @@ function libraryCard(book) {
   const results = h('div', {});
 
   const draw = (books) => {
-    results.replaceChildren(...systems.map((system) => availabilityNode(system, books[system.systemid] || {})));
+    results.replaceChildren(
+      ...systems.map((system) => availabilityNode(system, books[system.systemid] || {})),
+      h('p', { class: 'field__note' }, [
+        '蔵書情報はカーリルから取得しています。　',
+        h('a', { class: 'link', href: calilBookUrl(book), target: '_blank', rel: 'noopener', text: 'カーリルで見る' }),
+      ])
+    );
   };
 
   const button = h('button', {

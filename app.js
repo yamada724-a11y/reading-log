@@ -970,15 +970,18 @@ function backupCard() {
       : 'まだ一度もバックアップしていません。',
   });
 
+  /* Android の Chrome は種類を指定しないとカメラなどの選択画面になり、Googleドライブが出てこない。
+     一方 application/json だとドライブ側の報告する種類と合わず JSON が灰色になるため、大まかに絞る。
+     iOS Safari は accept の解釈に不具合があるため指定しない（「ファイルを選択」からドライブを開ける）。 */
   const fileInput = h('input', {
     type: 'file',
+    accept: /Android/i.test(navigator.userAgent) ? 'application/*,text/*' : null,
     hidden: true,
     onChange: async (e) => {
       const file = e.target.files[0];
       if (!file) return;
       try {
-        /* スマホでは種類で絞り込めない（iOS Safari は accept 指定でJSONを選べなくなる）ため、
-           どのファイルも選べるようにして、中身で判定する。 */
+        /* 種類ではきちんと絞り込めないため、中身で判定する */
         let payload = null;
         try {
           payload = JSON.parse(await file.text());

@@ -543,15 +543,14 @@ async function viewDetail(id) {
     current.interimResults = true;
     current.continuous = false;
 
-    const base = noteArea.value;
-    const separator = base && !/\s$/.test(base) ? '\n' : '';
+    const base = noteArea.value; // 区切りで間を空けても改行せず、そのまま続ける
     let heard = false;
     let failure = '';
 
     current.onresult = (event) => {
       heard = true;
       const spoken = [...event.results].map((result) => result[0].transcript).join('');
-      noteArea.value = base + separator + spoken;
+      noteArea.value = base + spoken;
       noteArea.scrollTop = noteArea.scrollHeight;
       if (event.results[event.results.length - 1].isFinal) writeNote(noteArea.value);
     };

@@ -19,6 +19,7 @@ const STATUS = {
 };
 
 let activeTab = 'want';
+let searchBy = 'title';
 
 /* ---------- DOM helper ---------- */
 
@@ -54,6 +55,7 @@ const ICONS = {
   star: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
   mic: 'M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z',
   stop: 'M6 6h12v12H6z',
+  backup: 'M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3zM8 13h2.55v3h2.9v-3H16l-4-4z',
   book: 'M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H6V4h2v8l2.5-1.5L13 12V4h5v16z',
 };
 
@@ -133,7 +135,7 @@ function bar({ title = '', left, right }) {
   return h('header', { class: 'bar' }, [
     left,
     h('h1', { class: 'bar__title', text: title }),
-    right,
+    ...[].concat(right),
   ]);
 }
 
@@ -186,7 +188,18 @@ async function viewShelf() {
   return [
     bar({
       title: '読書記録',
-      right: h('button', { class: 'icon-btn', 'aria-label': '設定', onClick: () => go('/settings') }, icon('tune')),
+      right: [
+        h('button', {
+          class: `icon-btn${backupIsStale() ? ' icon-btn--dot' : ''}`,
+          'aria-label': 'バックアップ',
+          title: 'バックアップ',
+          onClick: async (e) => {
+            const button = e.currentTarget;
+            if (await runBackup(books) !== null) button.classList.remove('icon-btn--dot');
+          },
+        }, icon('backup')),
+        h('button', { class: 'icon-btn', 'aria-label': '設定', onClick: () => go('/settings') }, icon('tune')),
+      ],
     }),
     h('main', {}, grid),
     h('button', { class: 'fab', 'aria-label': '本を追加', onClick: () => go('/new') }, icon('add', 28)),
@@ -203,6 +216,11 @@ async function addFromCandidate(candidate) {
   go(`/book/${book.id}`);
 }
 
+const SEARCH_BY = {
+  title: { label: 'タイトル', placeholder: 'タイトルで探す' },
+  author: { label: '著者', placeholder: '著者名で探す' },
+};
+
 function viewSearch() {
   let controller;
 
@@ -211,13 +229,32 @@ function viewSearch() {
 
   const input = h('input', {
     type: 'search',
-    placeholder: 'タイトルで探す',
+    placeholder: SEARCH_BY[searchBy].placeholder,
     enterkeyhint: 'search',
     autocomplete: 'off',
     onKeyDown: (e) => {
       if (e.key === 'Enter') search();
     },
   });
+
+  const byPills = h('div', { class: 'pills search-by' },
+    Object.entries(SEARCH_BY).map(([key, { label }]) =>
+      h('button', {
+        class: 'pill',
+        'aria-pressed': String(key === searchBy),
+        text: label,
+        onClick: (e) => {
+          searchBy = key;
+          for (const pill of e.currentTarget.parentElement.children) {
+            pill.setAttribute('aria-pressed', String(pill === e.currentTarget));
+          }
+          input.placeholder = SEARCH_BY[key].placeholder;
+          if (input.value.trim()) search();
+          else input.focus();
+        },
+      })
+    )
+  );
 
   async function search() {
     const query = input.value.trim();
@@ -229,7 +266,7 @@ function viewSearch() {
     status.textContent = '検索中…';
 
     try {
-      const candidates = await searchBooks(query, { signal: controller.signal });
+      const candidates = await searchBooks(query, { by: searchBy, signal: controller.signal });
       if (!candidates.length) {
         status.textContent = '見つかりませんでした。別の言葉でも試してみてください。';
         return;
@@ -268,9 +305,9 @@ function viewSearch() {
     bar({
       title: '本を追加',
       left: backButton(() => go('/')),
-      right: h('button', { class: 'text-btn', text: '手入力', onClick: () => go('/manual') }),
     }),
     h('main', {}, [
+      byPills,
       h('div', { class: 'search' }, [
         input,
         h('button', { class: 'search__go', text: '検索', onClick: search }),
@@ -281,11 +318,10 @@ function viewSearch() {
   ];
 }
 
-/* ---------- Add / edit: manual form ---------- */
+/* ---------- Edit ---------- */
 
 async function viewForm(id) {
-  const editing = Boolean(id);
-  const book = editing ? await getBook(id) : createBook({ status: activeTab });
+  const book = await getBook(id);
   if (!book) return viewMissing();
 
   const draft = { ...book, authors: [...book.authors] };
@@ -321,20 +357,20 @@ async function viewForm(id) {
     if (!draft.title) return;
     await saveBook(draft);
     activeTab = draft.status;
-    toast(editing ? '保存しました' : '本棚に追加しました');
+    toast('保存しました');
     go(`/book/${draft.id}`);
   };
 
   submit = h('button', {
     class: 'btn',
-    text: editing ? '保存する' : '本棚に追加',
+    text: '保存する',
     disabled: !draft.title,
     onClick: save,
   });
 
   return [
     bar({
-      title: editing ? '書誌を編集' : '手入力で追加',
+      title: '書誌を編集',
       left: backButton(() => history.back()),
     }),
     h('main', {}, [
@@ -862,20 +898,61 @@ function availabilityNode(system, result) {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+function backupIsStale() {
+  const lastBackupAt = getSetting(KEYS.lastBackupAt);
+  return !lastBackupAt || Date.now() - Date.parse(lastBackupAt) > 30 * DAY;
+}
+
+/* スマホでは共有メニューを開き、Googleドライブなどへ直接保存できるようにする。
+   AndroidのChromeは .json を共有できないため、そのときは .txt で渡す（中身は同じJSON）。 */
+async function deliverFile(text, basename) {
+  if (navigator.canShare && matchMedia('(pointer: coarse)').matches) {
+    for (const [ext, type] of [['json', 'application/json'], ['txt', 'text/plain']]) {
+      const file = new File([text], `${basename}.${ext}`, { type });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    }
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  h('a', { href: url, download: `${basename}.json` }).click();
+  URL.revokeObjectURL(url);
+}
+
+/* 共有メニューはタップ直後でないと開けないため、読み込み済みの本があれば渡してもらう。
+   成功したら冊数、キャンセル・失敗なら null を返す。 */
+async function runBackup(books) {
+  try {
+    const all = books || await listBooks();
+    const payload = {
+      schema: 'readinglog.v1',
+      exportedAt: new Date().toISOString(),
+      books: all,
+    };
+    await deliverFile(JSON.stringify(payload, null, 1), `読書記録-${todayISO()}`);
+    setSetting(KEYS.lastBackupAt, new Date().toISOString());
+    toast(`${all.length}冊をバックアップしました`);
+    return all.length;
+  } catch (error) {
+    if (error.name !== 'AbortError') toast('バックアップできませんでした');
+    return null;
+  }
+}
+
 function backupCard() {
   const lastBackupAt = getSetting(KEYS.lastBackupAt);
-  const stale = !lastBackupAt || Date.now() - Date.parse(lastBackupAt) > 30 * DAY;
 
   const state = h('p', {
     class: 'field__note',
     text: lastBackupAt
-      ? `最後に書き出したのは ${lastBackupAt.slice(0, 10)} です。`
-      : 'まだ一度も書き出していません。',
+      ? `最後にバックアップしたのは ${lastBackupAt.slice(0, 10)} です。`
+      : 'まだ一度もバックアップしていません。',
   });
 
   const fileInput = h('input', {
     type: 'file',
-    accept: 'application/json,.json',
+    accept: 'application/json,.json,text/plain,.txt',
     hidden: true,
     onChange: async (e) => {
       const file = e.target.files[0];
@@ -897,24 +974,14 @@ function backupCard() {
   });
 
   const exportNow = async () => {
-    const books = await listBooks();
-    const payload = {
-      schema: 'readinglog.v1',
-      exportedAt: new Date().toISOString(),
-      books,
-    };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' }));
-    const link = h('a', { href: url, download: `読書記録-${todayISO()}.json` });
-    link.click();
-    URL.revokeObjectURL(url);
-    setSetting(KEYS.lastBackupAt, new Date().toISOString());
-    state.textContent = `${books.length}冊を書き出しました。`;
-    toast('書き出しました');
+    const count = await runBackup();
+    if (count !== null) state.textContent = `${count}冊をバックアップしました。`;
   };
 
   return h('div', { class: 'card' }, [
     h('p', { class: 'card__label', text: 'バックアップ' }),
-    h('button', { class: 'btn', text: 'ファイルに書き出す', onClick: exportNow }),
+    h('button', { class: 'btn', text: 'バックアップする', onClick: exportNow }),
+    h('p', { class: 'field__note', text: 'スマホでは共有メニューが開きます。「ドライブ」を選ぶとGoogleドライブに保存されます。' }),
     h('button', {
       class: 'tonal',
       style: { width: '100%', justifyContent: 'center', marginTop: 'var(--s3)' },
@@ -923,8 +990,8 @@ function backupCard() {
     }),
     fileInput,
     state,
-    stale && h('p', { class: 'field__note warn', text: '記録はこの端末の中にしかありません。機種変更やブラウザのデータ削除で消えるため、ときどき書き出してください。' }),
-    h('p', { class: 'field__note', text: 'APIキーはバックアップに含まれません。' }),
+    backupIsStale() && h('p', { class: 'field__note warn', text: '記録はこの端末の中にしかありません。機種変更やブラウザのデータ削除で消えるため、ときどき保存してください。' }),
+    h('p', { class: 'field__note', text: '機種変更や、別のスマホに記録を移すときは、保存したファイルを「ファイルから読み戻す」で取り込みます。同じ本は新しいほうの記録が残ります。APIキーはバックアップに含まれません。' }),
   ]);
 }
 
@@ -948,7 +1015,6 @@ async function render() {
   let nodes;
   if (section === 'book' && param) nodes = await viewDetail(param);
   else if (section === 'edit' && param) nodes = await viewForm(param);
-  else if (section === 'manual') nodes = await viewForm(null);
   else if (section === 'new') nodes = viewSearch();
   else if (section === 'settings') nodes = viewSettings();
   else if (section === 'libraries') nodes = viewLibraries();

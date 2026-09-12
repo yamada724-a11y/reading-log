@@ -38,7 +38,8 @@ function yearOf(salesDate) {
   return (salesDate || '').match(/\d{4}/)?.[0] || '';
 }
 
-export async function searchBooks(title, { signal } = {}) {
+/* by: 'title' ならタイトル、'author' なら著者名で探す */
+export async function searchBooks(query, { by = 'title', signal } = {}) {
   const appId = getSetting(KEYS.rakutenAppId);
   const accessKey = getSetting(KEYS.rakutenAccessKey);
   if (!appId || !accessKey) throw new MissingKeyError();
@@ -47,7 +48,7 @@ export async function searchBooks(title, { signal } = {}) {
   url.searchParams.set('format', 'json');
   url.searchParams.set('applicationId', appId);
   url.searchParams.set('accessKey', accessKey);
-  url.searchParams.set('title', title);
+  url.searchParams.set(by === 'author' ? 'author' : 'title', query);
   url.searchParams.set('hits', '20');
   url.searchParams.set('booksGenreId', '001');
 

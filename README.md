@@ -66,3 +66,4 @@ push すれば反映される（オンラインなら常に最新を取りに行
 | `db.js` | 端末内保存（IndexedDB） |
 | `api.js` | 楽天 / openBD / カーリルの呼び出し |
 | `sw.js` | オフライン動作 |
+| `tools/make_icons.py` | アイコンの生成（Pillowが必要。アプリ本体からは使わない） |

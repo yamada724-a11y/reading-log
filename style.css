@@ -272,14 +272,14 @@ main {
 
 .shelf {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s5) var(--s3);
   padding-top: var(--s2);
 }
 
 @media (min-width: 560px) {
   .shelf {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

@@ -130,10 +130,13 @@ function backButton(onClick) {
   return h('button', { class: 'icon-btn', 'aria-label': 'もどる', onClick }, icon('back'));
 }
 
-function bar({ title = '', left, right }) {
+function bar({ title = '', left, right, titleIcon }) {
   return h('header', { class: 'bar' }, [
     left,
-    h('h1', { class: 'bar__title', text: title }),
+    h('div', { class: 'bar__title-group' }, [
+      titleIcon,
+      h('h1', { class: 'bar__title', text: title }),
+    ]),
     ...[].concat(right),
   ]);
 }
@@ -187,6 +190,7 @@ async function viewShelf() {
   return [
     bar({
       title: '読書記録',
+      titleIcon: h('img', { class: 'bar__icon', src: 'icons/icon-192.png', alt: '' }),
       right: [
         h('button', {
           class: `icon-btn${backupIsStale() ? ' icon-btn--dot' : ''}`,

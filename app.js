@@ -90,12 +90,11 @@ function todayISO() {
 /* ---------- Speech ---------- */
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let activeRecognition = null;
+let stopDictation = null; // 聞き取り中なら、それを止める関数が入る（画面を移るときに使う）
 
 const SPEECH_ERRORS = {
   'not-allowed': 'マイクの使用が許可されていません。ブラウザの設定を確認してください。',
   'service-not-allowed': 'この端末では音声入力が使えませんでした。',
-  'no-speech': '音声が聞き取れませんでした。',
   network: '通信できませんでした。',
 };
 
@@ -492,9 +491,13 @@ async function viewDetail(id) {
     queueSave(patch);
   }
 
+  let recognition = null;
+  let listening = false;
+  let silentRounds = 0;
+
   const micButton = SpeechRecognition && h('button', {
     class: 'tonal',
-    onClick: () => (activeRecognition ? activeRecognition.stop() : listen()),
+    onClick: () => (listening ? stopListening() : startListening()),
   }, [icon('mic', 20), h('span', { text: '音声で入力' })]);
 
   function setMicState(live) {
@@ -505,34 +508,70 @@ async function viewDetail(id) {
     );
   }
 
-  function listen() {
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ja-JP';
-    recognition.interimResults = true;
-    recognition.continuous = false;
+  const cancelDictation = () => {
+    listening = false;
+    recognition?.abort();
+  };
+
+  function startListening() {
+    listening = true;
+    silentRounds = 0;
+    stopDictation = cancelDictation;
+    savedNote.textContent = '';
+    setMicState(true);
+    listenOnce();
+  }
+
+  // stop() はそこまで話した分を確定させてから終わる
+  function stopListening() {
+    listening = false;
+    recognition?.stop();
+  }
+
+  function finish(message) {
+    listening = false;
+    if (stopDictation === cancelDictation) stopDictation = null;
+    setMicState(false);
+    if (message) savedNote.textContent = message;
+  }
+
+  /* 端末の音声認識は一区切り話すと終わってしまう（continuous にすると Android の Chrome で
+     文章が重複する）ため、止めるボタンが押されるまで区切りごとに聞き取りをやり直す。 */
+  function listenOnce() {
+    const current = new SpeechRecognition();
+    current.lang = 'ja-JP';
+    current.interimResults = true;
+    current.continuous = false;
 
     const base = noteArea.value;
     const separator = base && !/\s$/.test(base) ? '\n' : '';
+    let heard = false;
+    let failure = '';
 
-    recognition.onstart = () => {
-      activeRecognition = recognition;
-      setMicState(true);
-      savedNote.textContent = '';
-    };
-    recognition.onresult = (event) => {
+    current.onresult = (event) => {
+      heard = true;
       const spoken = [...event.results].map((result) => result[0].transcript).join('');
       noteArea.value = base + separator + spoken;
       noteArea.scrollTop = noteArea.scrollHeight;
       if (event.results[event.results.length - 1].isFinal) writeNote(noteArea.value);
     };
-    recognition.onerror = (event) => {
-      savedNote.textContent = SPEECH_ERRORS[event.error] || '音声入力に失敗しました。';
+    current.onerror = (event) => {
+      // 黙っていた（no-speech）・自分で止めた（aborted）ときは続けるかどうかを onend で決める
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        failure = SPEECH_ERRORS[event.error] || '音声入力に失敗しました。';
+      }
     };
-    recognition.onend = () => {
-      activeRecognition = null;
-      setMicState(false);
+    current.onend = () => {
+      recognition = null;
+      if (failure) return finish(failure);
+      silentRounds = heard ? 0 : silentRounds + 1;
+      if (!listening) return finish();
+      if (silentRounds >= 3) return finish('しばらく声が聞こえなかったので、聞き取りを止めました。');
+      listenOnce();
     };
-    recognition.start();
+
+    recognition = current;
+    current.start();
   }
 
   const subtitle = [book.authors.join('、'), book.publisher].filter(Boolean).join(' / ');
@@ -1037,7 +1076,7 @@ function viewMissing() {
 /* ---------- Router ---------- */
 
 async function render() {
-  activeRecognition?.abort();
+  stopDictation?.();
   const path = location.hash.slice(1) || '/';
   const [, section, param] = path.split('/');
 

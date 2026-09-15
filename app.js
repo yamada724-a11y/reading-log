@@ -10,6 +10,7 @@ import {
   checkAvailability,
   MissingKeyError,
 } from './api.js';
+import { hasPin, setPin, verifyPin, clearPin } from './lock.js';
 
 const app = document.getElementById('app');
 
@@ -20,6 +21,8 @@ const STATUS = {
 
 let activeTab = 'want';
 let searchBy = 'title';
+let secretUnlocked = false; // 非公開の本棚を開いている間だけ true
+let lockIntent = null; // 暗証番号の画面で何をするか（unlock / setup / change）と、終わったあとの処理
 
 /* ---------- DOM helper ---------- */
 
@@ -57,6 +60,9 @@ const ICONS = {
   stop: 'M6 6h12v12H6z',
   backup: 'M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3zM8 13h2.55v3h2.9v-3H16l-4-4z',
   book: 'M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H6V4h2v8l2.5-1.5L13 12V4h5v16z',
+  lock: 'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z',
+  lockOpen: 'M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z',
+  backspace: 'M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H7.07L2.4 12l4.66-7H22v14zm-11.59-2L14 13.41 17.59 17 19 15.59 15.41 12 19 8.41 17.59 7 14 10.59 10.41 7 9 8.41 12.59 12 9 15.59z',
 };
 
 function icon(name, size = 24) {
@@ -167,18 +173,20 @@ function bottomNav() {
   );
 }
 
+function bookCard(book) {
+  return h('button', { class: 'book', onClick: () => go(`/book/${book.id}`) }, [
+    h('div', { class: 'book__cover' }, coverNode(book)),
+    h('p', { class: 'book__title', text: book.title }),
+    h('p', { class: 'book__author', text: book.authors.join('、') }),
+  ]);
+}
+
 async function viewShelf() {
   const books = await listBooks();
-  const shown = books.filter((b) => b.status === activeTab);
+  const shown = books.filter((b) => b.status === activeTab && !b.hidden);
 
   const grid = shown.length
-    ? h('div', { class: 'shelf' }, shown.map((book) =>
-        h('button', { class: 'book', onClick: () => go(`/book/${book.id}`) }, [
-          h('div', { class: 'book__cover' }, coverNode(book)),
-          h('p', { class: 'book__title', text: book.title }),
-          h('p', { class: 'book__author', text: book.authors.join('、') }),
-        ])
-      ))
+    ? h('div', { class: 'shelf' }, shown.map((book) => bookCard(book)))
     : h('div', { class: 'empty' }, [
         h('div', { class: 'empty__icon' }, icon('book', 28)),
         h('p', {
@@ -192,6 +200,12 @@ async function viewShelf() {
       title: '読書記録',
       titleIcon: h('img', { class: 'bar__icon', src: 'icons/icon-192.png', alt: '' }),
       right: [
+        h('button', {
+          class: 'icon-btn',
+          'aria-label': '非公開の本棚',
+          title: '非公開の本棚',
+          onClick: () => openLock(secretIntent()),
+        }, icon('lock')),
         h('button', {
           class: `icon-btn${backupIsStale() ? ' icon-btn--dot' : ''}`,
           'aria-label': 'バックアップ',
@@ -207,6 +221,191 @@ async function viewShelf() {
     h('main', {}, grid),
     h('button', { class: 'fab', 'aria-label': '本を追加', onClick: () => go('/new') }, icon('add', 28)),
     bottomNav(),
+  ];
+}
+
+/* ---------- Secret shelf ---------- */
+
+// 暗証番号の画面は履歴に残るため、終わったら置き換えて「戻る」で暗証番号の画面に戻らないようにする
+function replaceRoute(path) {
+  location.replace(`#${path}`);
+}
+
+function openLock(intent) {
+  lockIntent = intent;
+  go('/lock');
+}
+
+function secretIntent() {
+  return {
+    mode: hasPin() ? 'unlock' : 'setup',
+    then: () => {
+      secretUnlocked = true;
+      replaceRoute('/secret');
+    },
+  };
+}
+
+async function viewSecret() {
+  const books = (await listBooks()).filter((b) => b.hidden);
+
+  const sections = Object.entries(STATUS).flatMap(([status, label]) => {
+    const list = books.filter((b) => b.status === status);
+    return list.length
+      ? [
+          h('p', { class: 'shelf-label', text: `${label}（${list.length}冊）` }),
+          h('div', { class: 'shelf' }, list.map((book) => bookCard(book))),
+        ]
+      : [];
+  });
+
+  return [
+    bar({ title: '非公開の本棚', left: backButton(() => go('/')) }),
+    h('main', {}, sections.length ? sections : h('div', { class: 'empty' }, [
+      h('div', { class: 'empty__icon' }, icon('lock', 28)),
+      h('p', { class: 'empty__text', text: '非公開の本はまだありません' }),
+      h('p', { class: 'field__note', text: '本の詳細画面の「非公開にする」から移せます。' }),
+    ])),
+  ];
+}
+
+async function forgetPin() {
+  const hidden = (await listBooks()).filter((b) => b.hidden);
+  const ok = confirm(`非公開の本（${hidden.length}冊）をすべて削除して、暗証番号を消します。\nバックアップがあれば、読み戻すと非公開のまま戻ります。よろしいですか？`);
+  if (!ok) return;
+  for (const book of hidden) await deleteBook(book.id);
+  clearPin();
+  lockIntent = null;
+  toast('非公開の本を削除し、暗証番号を消しました');
+  replaceRoute('/');
+}
+
+const PIN_STEPS = {
+  unlock: ['current'],
+  setup: ['new', 'confirm'],
+  change: ['current', 'new', 'confirm'],
+};
+
+const PIN_PROMPTS = {
+  current: '暗証番号を入力',
+  new: '新しい暗証番号（4桁）を決めてください',
+  confirm: 'もう一度入力してください',
+};
+
+const LOCK_TITLES = {
+  unlock: '非公開の本棚',
+  setup: '暗証番号の設定',
+  change: '暗証番号の変更',
+};
+
+function viewLock() {
+  const intent = lockIntent || secretIntent();
+  const steps = PIN_STEPS[intent.mode];
+  let step = 0;
+  let entered = '';
+  let firstPin = '';
+  let busy = false;
+
+  const prompt = h('p', { class: 'lock__prompt', text: PIN_PROMPTS[steps[0]] });
+  const dots = h('div', { class: 'lock__dots' }, [0, 1, 2, 3].map(() => h('span', { class: 'lock__dot' })));
+  const message = h('p', { class: 'lock__message' });
+
+  const drawDots = () => {
+    [...dots.children].forEach((dot, i) => dot.classList.toggle('lock__dot--on', i < entered.length));
+  };
+
+  const fail = (text) => {
+    message.textContent = text;
+    entered = '';
+    drawDots();
+    dots.classList.remove('lock__dots--shake');
+    void dots.offsetWidth; // 揺れるアニメーションを最初からやり直す
+    dots.classList.add('lock__dots--shake');
+  };
+
+  async function submit() {
+    busy = true;
+    const kind = steps[step];
+    if (kind === 'current') {
+      const result = await verifyPin(entered);
+      if (!result.ok) {
+        busy = false;
+        return fail(result.wait
+          ? `続けて間違えたため、${result.wait}秒待ってから入力してください。`
+          : `暗証番号が違います（あと${result.left}回）`);
+      }
+    } else if (kind === 'new') {
+      firstPin = entered;
+    } else if (entered !== firstPin) {
+      step = steps.indexOf('new');
+      prompt.textContent = PIN_PROMPTS.new;
+      busy = false;
+      return fail('一致しませんでした。もう一度決め直してください。');
+    } else {
+      await setPin(firstPin);
+    }
+
+    step += 1;
+    entered = '';
+    busy = false;
+    drawDots();
+    if (step < steps.length) {
+      prompt.textContent = PIN_PROMPTS[steps[step]];
+      message.textContent = '';
+      return;
+    }
+    lockIntent = null;
+    window.removeEventListener('keydown', onKey);
+    await intent.then();
+  }
+
+  function press(key) {
+    if (busy) return;
+    if (key === 'back') entered = entered.slice(0, -1);
+    else if (entered.length < 4) entered += key;
+    drawDots();
+    if (entered.length === 4) submit();
+  }
+
+  // PC のキーボードでも入力できるようにする。画面を離れたら外す
+  function onKey(e) {
+    if (!root.isConnected) return window.removeEventListener('keydown', onKey);
+    if (/^[0-9]$/.test(e.key)) press(e.key);
+    else if (e.key === 'Backspace') press('back');
+  }
+  window.addEventListener('keydown', onKey);
+
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', null, '0', 'back'];
+  const pad = h('div', { class: 'lock__pad' }, keys.map((key) => (key === null
+    ? h('span')
+    : h('button', {
+        class: 'lock__key',
+        'aria-label': key === 'back' ? '1文字消す' : key,
+        onClick: () => press(key),
+      }, key === 'back' ? icon('backspace') : key))));
+
+  const root = h('main', { class: 'lock' }, [
+    h('div', { class: 'lock__icon' }, icon('lock', 28)),
+    prompt,
+    intent.mode === 'setup' && h('p', {
+      class: 'field__note lock__note',
+      text: '非公開の本棚を開くときに使います。忘れると、非公開の本を削除しないと設定し直せません。',
+    }),
+    dots,
+    message,
+    pad,
+    intent.mode === 'unlock' && h('button', { class: 'link lock__forgot', text: '暗証番号を忘れたとき', onClick: forgetPin }),
+  ]);
+
+  return [
+    bar({
+      title: LOCK_TITLES[intent.mode],
+      left: backButton(() => {
+        lockIntent = null;
+        history.back();
+      }),
+    }),
+    root,
   ];
 }
 
@@ -325,7 +524,7 @@ function viewSearch() {
 
 async function viewForm(id) {
   const book = await getBook(id);
-  if (!book) return viewMissing();
+  if (!book || (book.hidden && !secretUnlocked)) return viewMissing();
 
   const draft = { ...book, authors: [...book.authors] };
   let submit;
@@ -424,7 +623,8 @@ async function viewForm(id) {
 
 async function viewDetail(id) {
   const book = await getBook(id);
-  if (!book) return viewMissing();
+  if (!book || (book.hidden && !secretUnlocked)) return viewMissing();
+  const home = book.hidden ? '/secret' : '/';
 
   let saveTimer;
   const savedNote = h('p', { class: 'saved' });
@@ -577,11 +777,33 @@ async function viewDetail(id) {
     current.start();
   }
 
+  const flush = async (patch) => {
+    Object.assign(book, patch);
+    clearTimeout(saveTimer);
+    await saveBook(book);
+  };
+
+  function hide() {
+    const apply = async () => {
+      await flush({ hidden: true });
+      toast('非公開にしました');
+      replaceRoute('/');
+    };
+    if (hasPin()) apply();
+    else openLock({ mode: 'setup', then: apply });
+  }
+
+  async function unhide() {
+    await flush({ hidden: false });
+    toast('非公開を解除しました');
+    go('/secret');
+  }
+
   const subtitle = [book.authors.join('、'), book.publisher].filter(Boolean).join(' / ');
 
   return [
     bar({
-      left: backButton(() => go('/')),
+      left: backButton(() => go(home)),
       right: h('button', { class: 'text-btn', text: '編集', onClick: () => go(`/edit/${book.id}`) }),
     }),
     h('main', {}, [
@@ -614,13 +836,20 @@ async function viewDetail(id) {
       ]),
       libraryCard(book),
       h('button', {
+        class: 'btn btn--neutral',
+        onClick: () => (book.hidden ? unhide() : hide()),
+      }, [
+        icon(book.hidden ? 'lockOpen' : 'lock', 20),
+        h('span', { text: book.hidden ? '非公開を解除' : '非公開にする' }),
+      ]),
+      h('button', {
         class: 'btn btn--quiet',
         text: 'この本を削除',
         onClick: async () => {
           if (!confirm(`「${book.title}」を削除します。よろしいですか？`)) return;
           await deleteBook(book.id);
           toast('削除しました');
-          go('/');
+          go(home);
         },
       }),
     ]),
@@ -802,6 +1031,7 @@ function viewSettings() {
           ? h('p', { class: 'field__note', text: chosenLibraries.map((item) => item.name).join('、') })
           : h('p', { class: 'field__note', text: '読みたい本が置いてあるか調べたい図書館を選びます。' }),
       ]),
+      secretCard(),
       backupCard(),
       h('div', { class: 'card' }, [
         h('p', { class: 'card__label', text: '画面の明るさ' }),
@@ -809,6 +1039,31 @@ function viewSettings() {
       ]),
     ]),
   ];
+}
+
+function secretCard() {
+  const pinSet = hasPin();
+  return h('div', { class: 'card' }, [
+    h('p', { class: 'card__label', text: '非公開の本棚' }),
+    pinSet && h('button', {
+      class: 'tonal',
+      style: { width: '100%', justifyContent: 'center', marginTop: '0' },
+      text: '暗証番号を変更する',
+      onClick: () => openLock({
+        mode: 'change',
+        then: () => {
+          toast('暗証番号を変更しました');
+          replaceRoute('/settings');
+        },
+      }),
+    }),
+    h('p', {
+      class: 'field__note',
+      text: pinSet
+        ? '本棚の右上の鍵マークから、暗証番号を入れて開きます。非公開の本もバックアップに含まれます（暗証番号は含まれません）。'
+        : '本の詳細画面の「非公開にする」を押すと、暗証番号を決めて使い始められます。',
+    }),
+  ]);
 }
 
 /* ---------- Libraries ---------- */
@@ -1083,8 +1338,13 @@ async function render() {
   const path = location.hash.slice(1) || '/';
   const [, section, param] = path.split('/');
 
+  // 非公開の本棚と、そこから開いた本の画面以外に移ったら、すぐロックし直す
+  if (!['secret', 'book', 'edit'].includes(section)) secretUnlocked = false;
+
   let nodes;
   if (section === 'book' && param) nodes = await viewDetail(param);
+  else if (section === 'secret' && secretUnlocked) nodes = await viewSecret();
+  else if (section === 'lock') nodes = viewLock();
   else if (section === 'edit' && param) nodes = await viewForm(param);
   else if (section === 'new') nodes = viewSearch();
   else if (section === 'settings') nodes = viewSettings();
@@ -1098,6 +1358,14 @@ async function render() {
 applyTheme();
 window.addEventListener('hashchange', render);
 render();
+
+// 別のアプリに切り替えたり閉じたりしたら、非公開の本棚はすぐロックする
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && secretUnlocked) {
+    secretUnlocked = false;
+    replaceRoute('/');
+  }
+});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));

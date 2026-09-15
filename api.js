@@ -10,6 +10,9 @@ export const KEYS = {
   libraries: 'rl.libraries',
   theme: 'rl.theme',
   lastBackupAt: 'rl.lastBackupAt',
+  secretPin: 'rl.secretPin',
+  secretFails: 'rl.secretFails',
+  secretLockUntil: 'rl.secretLockUntil',
 };
 
 export function getSetting(key) {

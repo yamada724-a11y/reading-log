@@ -942,3 +942,118 @@ html[data-theme="dark"] .badge--busy { background: #453620; color: #FDD663; }
     transition-duration: .01ms !important;
   }
 }
+
+/* --- Secret shelf / lock --- */
+
+.shelf-label {
+  margin: var(--s4) 0 var(--s3);
+  font-size: var(--t2);
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.btn--neutral {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  background: none;
+  color: var(--text-2);
+}
+
+.lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--s5);
+}
+
+.lock__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 32px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  display: grid;
+  place-items: center;
+}
+
+.lock__prompt {
+  margin: var(--s4) 0 0;
+  font-size: var(--t3);
+  color: var(--text);
+  text-align: center;
+}
+
+.lock__note {
+  max-width: 280px;
+  text-align: center;
+}
+
+.lock__dots {
+  display: flex;
+  gap: var(--s4);
+  margin-top: var(--s5);
+}
+
+.lock__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--outline);
+  transition: background var(--duration) ease, border-color var(--duration) ease;
+}
+
+.lock__dot--on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.lock__dots--shake {
+  animation: shake 320ms ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+
+.lock__message {
+  min-height: 20px;
+  margin: var(--s3) 0 0;
+  font-size: var(--t1);
+  color: var(--danger);
+  text-align: center;
+}
+
+.lock__pad {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  gap: var(--s4) var(--s5);
+  margin-top: var(--s4);
+}
+
+.lock__key {
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 400;
+  display: grid;
+  place-items: center;
+  transition: background var(--duration) ease;
+}
+
+.lock__key:active {
+  background: var(--primary-container);
+}
+
+.lock__forgot {
+  margin-top: var(--s5);
+  font-size: var(--t1);
+}

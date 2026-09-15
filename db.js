@@ -48,6 +48,7 @@ export function createBook(fields = {}) {
     coverUrl: '',
     note: '',
     rating: 0,
+    hidden: false,
     startedAt: '',
     finishedAt: '',
     addedAt: now,

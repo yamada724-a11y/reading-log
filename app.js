@@ -1492,8 +1492,26 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+/* アプリを更新したとき、スマホのホーム画面から開いても古い版のままになることがあるため、
+   新しい版に入れ替わったら一度だけ読み込み直す。 */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
+
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('./sw.js');
+      await registration.update(); // 開くたびに新しい版が出ていないか確かめる
+    } catch (error) {
+      console.error('Service Worker の登録に失敗しました', error);
+    }
+  });
 }
 
 navigator.storage?.persist?.();

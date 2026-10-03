@@ -1,4 +1,19 @@
-import { listBooks, getBook, saveBook, deleteBook, createBook, importBooks } from './db.js';
+import {
+  listBooks,
+  getBook,
+  saveBook,
+  deleteBook,
+  createBook,
+  importBooks,
+  signIn,
+  signOutUser,
+  onAuthChange,
+  currentUser,
+  startSync,
+  stopSync,
+  waitForFirstSync,
+  onChange,
+} from './cloud.js';
 import {
   KEYS,
   getSetting,
@@ -145,6 +160,38 @@ function bar({ title = '', left, right, titleIcon }) {
     ]),
     ...[].concat(right),
   ]);
+}
+
+/* ---------- Sign in ---------- */
+
+function viewSignIn() {
+  const message = h('p', { class: 'signin__message' });
+
+  const button = h('button', {
+    class: 'btn',
+    text: 'Googleでログイン',
+    onClick: async () => {
+      button.disabled = true;
+      message.textContent = '';
+      try {
+        await signIn();
+      } catch (error) {
+        console.error(error);
+        message.textContent = 'ログインできませんでした。Chromeで開き直すと直ることがあります。';
+        button.disabled = false;
+      }
+    },
+  });
+
+  return [
+    h('main', { class: 'signin' }, [
+      h('img', { class: 'signin__icon', src: 'icons/icon-192.png', alt: '' }),
+      h('h1', { class: 'signin__title', text: '読書記録' }),
+      h('p', { class: 'signin__text', text: '記録はあなたのGoogleアカウントに保存されます。スマホを替えたり、ブラウザのデータを消したりしても、ログインすれば同じ記録が出てきます。' }),
+      button,
+      message,
+    ]),
+  ];
 }
 
 /* ---------- Shelf ---------- */
@@ -1031,6 +1078,7 @@ function viewSettings() {
           ? h('p', { class: 'field__note', text: chosenLibraries.map((item) => item.name).join('、') })
           : h('p', { class: 'field__note', text: '読みたい本が置いてあるか調べたい図書館を選びます。' }),
       ]),
+      accountCard(),
       secretCard(),
       backupCard(),
       h('div', { class: 'card' }, [
@@ -1039,6 +1087,20 @@ function viewSettings() {
       ]),
     ]),
   ];
+}
+
+function accountCard() {
+  const user = currentUser();
+  return h('div', { class: 'card' }, [
+    h('p', { class: 'card__label', text: 'アカウント' }),
+    h('p', { class: 'field__note', text: `${user?.email || ''} でログイン中です。記録はこのアカウントのクラウドに保存され、どの端末からでも同じ記録が見られます。` }),
+    h('button', {
+      class: 'tonal',
+      style: { width: '100%', justifyContent: 'center' },
+      text: 'ログアウト',
+      onClick: () => signOutUser(),
+    }),
+  ]);
 }
 
 function secretCard() {
@@ -1363,6 +1425,11 @@ function viewMissing() {
 
 async function render() {
   stopDictation?.();
+  if (!currentUser()) {
+    app.replaceChildren(...viewSignIn());
+    window.scrollTo(0, 0);
+    return;
+  }
   const path = location.hash.slice(1) || '/';
   const [, section, param] = path.split('/');
 
@@ -1383,9 +1450,39 @@ async function render() {
   window.scrollTo(0, 0);
 }
 
+/* 以前は端末内（IndexedDB）に保存していた。残っていれば、初回ログイン時に一度だけクラウドへ移す。 */
+async function migrateLocalBooks() {
+  if (getSetting(KEYS.cloudMigratedAt)) return;
+  try {
+    await waitForFirstSync();
+    const local = await import('./db.js');
+    const books = await local.listBooks();
+    if (books.length) {
+      const { added, updated } = await importBooks(books);
+      if (added || updated) toast(`端末内の${added + updated}冊をクラウドへ移しました`);
+    }
+    setSetting(KEYS.cloudMigratedAt, new Date().toISOString());
+  } catch (error) {
+    console.error('クラウドへの移行に失敗しました', error);
+  }
+}
+
 applyTheme();
 window.addEventListener('hashchange', render);
-render();
+
+/* クラウドの中身が変わったら一覧を作り直す。入力中の画面（本の詳細・編集・暗証番号）は
+   作り直すと書きかけが消えるため、そのままにする。 */
+onChange(() => {
+  const section = location.hash.slice(1).split('/')[1] || '';
+  if (section === '' || section === 'secret') render();
+});
+
+onAuthChange(async (user) => {
+  if (user) startSync(user.uid);
+  else stopSync();
+  await render();
+  if (user) await migrateLocalBooks();
+});
 
 // 別のアプリに切り替えたり閉じたりしたら、非公開の本棚はすぐロックする
 document.addEventListener('visibilitychange', () => {

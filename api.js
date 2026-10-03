@@ -10,6 +10,7 @@ export const KEYS = {
   libraries: 'rl.libraries',
   theme: 'rl.theme',
   lastBackupAt: 'rl.lastBackupAt',
+  cloudMigratedAt: 'rl.cloudMigratedAt',
   secretPin: 'rl.secretPin',
   secretFails: 'rl.secretFails',
   secretLockUntil: 'rl.secretLockUntil',

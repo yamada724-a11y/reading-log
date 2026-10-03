@@ -1,8 +1,9 @@
 /* アプリを更新したら、この番号を1つ上げること。 */
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 
 const SHELL_CACHE = `shell-${CACHE_VERSION}`;
 const COVER_CACHE = 'covers';
+const SDK_CACHE = 'firebase-sdk';
 
 const SHELL = [
   './',
@@ -11,6 +12,7 @@ const SHELL = [
   './app.js',
   './db.js',
   './api.js',
+  './cloud.js',
   './lock.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
@@ -26,7 +28,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((names) =>
       Promise.all(
         names
-          .filter((name) => name !== SHELL_CACHE && name !== COVER_CACHE)
+          .filter((name) => name !== SHELL_CACHE && name !== COVER_CACHE && name !== SDK_CACHE)
           .map((name) => caches.delete(name))
       )
     )
@@ -64,6 +66,12 @@ self.addEventListener('fetch', (event) => {
 
   if (url.origin === self.location.origin) {
     event.respondWith(networkFirst(request));
+    return;
+  }
+
+  // Firebaseの部品は中身が変わらないので、一度取れたら控えを使う（電波がなくても起動できる）
+  if (url.hostname === 'www.gstatic.com' && url.pathname.includes('/firebasejs/')) {
+    event.respondWith(cacheFirst(request, SDK_CACHE));
     return;
   }
 

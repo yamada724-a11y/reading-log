@@ -218,7 +218,7 @@ async function viewShelf() {
         h('button', { class: 'icon-btn', 'aria-label': '設定', onClick: () => go('/settings') }, icon('tune')),
       ],
     }),
-    h('main', {}, grid),
+    h('main', {}, [backupBanner(books), grid]),
     h('button', { class: 'fab', 'aria-label': '本を追加', onClick: () => go('/new') }, icon('add', 28)),
     bottomNav(),
   ];
@@ -1215,9 +1215,37 @@ function availabilityNode(system, result) {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+/* 端末の中だけにある記録は、Chromeの閲覧データ削除でまとめて消える。
+   前回のバックアップからの日数と変更冊数を本棚の上に出して、書き出しを促す。 */
+function backupBanner(books) {
+  if (!books.length) return null;
+
+  const lastBackupAt = getSetting(KEYS.lastBackupAt);
+  const changed = books.filter((book) => (book.updatedAt || '') > lastBackupAt).length;
+  const days = lastBackupAt ? Math.floor((Date.now() - Date.parse(lastBackupAt)) / DAY) : null;
+  if (lastBackupAt && (days < 7 || !changed)) return null;
+
+  const notice = h('div', { class: 'notice' }, [
+    h('p', {
+      class: 'notice__text',
+      text: lastBackupAt
+        ? `前回のバックアップから${days}日、${changed}冊ぶん変わっています。`
+        : '記録はこの端末の中だけにあります。バックアップしておきましょう。',
+    }),
+    h('button', {
+      class: 'notice__btn',
+      text: '今すぐ',
+      onClick: async () => {
+        if (await runBackup(books) !== null) notice.remove();
+      },
+    }),
+  ]);
+  return notice;
+}
+
 function backupIsStale() {
   const lastBackupAt = getSetting(KEYS.lastBackupAt);
-  return !lastBackupAt || Date.now() - Date.parse(lastBackupAt) > 30 * DAY;
+  return !lastBackupAt || Date.now() - Date.parse(lastBackupAt) > 7 * DAY;
 }
 
 /* スマホでは共有メニューを開き、Googleドライブなどへ直接保存できるようにする。
@@ -1316,7 +1344,7 @@ function backupCard() {
     }),
     fileInput,
     state,
-    backupIsStale() && h('p', { class: 'field__note warn', text: '記録はこの端末の中にしかありません。機種変更やブラウザのデータ削除で消えるため、ときどき保存してください。' }),
+    backupIsStale() && h('p', { class: 'field__note warn', text: '記録はこの端末の中にしかありません。Chromeの「閲覧データの削除」で「Cookieとサイトデータ」を消すと、本も設定もまとめて消えます。こまめに保存してください。' }),
     h('p', { class: 'field__note', text: '機種変更や、別のスマホに記録を移すときは、保存したファイルを「ファイルから読み戻す」で取り込みます。同じ本は新しいほうの記録が残ります。APIキーはバックアップに含まれません。' }),
   ]);
 }

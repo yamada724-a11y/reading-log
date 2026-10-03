@@ -1057,3 +1057,38 @@ html[data-theme="dark"] .badge--busy { background: #453620; color: #FDD663; }
   margin-top: var(--s5);
   font-size: var(--t1);
 }
+
+/* --- Backup notice --- */
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  border-radius: 12px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.notice__text {
+  flex: 1;
+  margin: 0;
+  font-size: var(--t1);
+  line-height: 1.5;
+}
+
+.notice__btn {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 var(--s4);
+  border-radius: 18px;
+  background: var(--bg);
+  color: var(--primary);
+  font-size: var(--t2);
+  font-weight: 500;
+}
+
+.notice__btn:active {
+  background: var(--surface-2);
+}
